@@ -2,7 +2,10 @@ module discorddel
 
 go 1.17
 
-require github.com/diamondburned/arikawa/v3 v3.3.0
+require (
+	github.com/diamondburned/arikawa/v3 v3.3.0
+	github.com/mattn/go-sqlite3 v1.14.17
+)
 
 require (
 	github.com/gorilla/schema v1.2.0 // indirect

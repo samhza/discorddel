@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -19,6 +20,7 @@ import (
 	"github.com/diamondburned/arikawa/v3/gateway"
 	"github.com/diamondburned/arikawa/v3/session"
 	"github.com/diamondburned/arikawa/v3/utils/httputil"
+	"github.com/mattn/go-sqlite3"
 )
 
 const (
@@ -123,7 +125,7 @@ Outer:
 				if output != nil {
 					err := output.logMessage(m)
 					if err != nil {
-						log.Printf("Error logging message %s: %s", m.URL(), err)
+						log.Fatalf("Error logging message %s: %s\n", m.URL(), err)
 					}
 				}
 				if m.Author.ID != self.ID {
@@ -141,24 +143,43 @@ Outer:
 	}
 }
 
+const schema = `
+CREATE TABLE IF NOT EXISTS Message (
+	id INTEGER NOT NULL PRIMARY KEY,
+	author INTEGER NOT NULL,
+	channel INTEGER NOT NULL,
+	guild INTEGER,
+	content TEXT NOT NULL,
+	json TEXT NOT NULL
+);
+`
+
+var stmtInsert *sql.Stmt
+
 func newOutput(dir string) (*output, error) {
 	o := new(output)
 	err := os.MkdirAll(dir, 0777)
 	if err != nil {
 		return nil, err
 	}
-	o.File, err = os.OpenFile(path.Join(dir, "messages"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	o.DB, err = sql.Open("sqlite3", path.Join(dir, "messages.db"))
 	if err != nil {
 		return nil, err
 	}
-	o.enc = json.NewEncoder(o.File)
+	_, err = o.Exec(schema)
+	if err != nil {
+		return nil, err
+	}
+	stmtInsert, err = o.Prepare("INSERT INTO Message (id, author, channel, guild, content, json) VALUES(?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		return nil, err
+	}
 	o.attdir = path.Join(dir, "attachments")
 	return o, nil
 }
 
 type output struct {
-	*os.File
-	enc    *json.Encoder
+	*sql.DB
 	attdir string
 }
 
@@ -196,11 +217,15 @@ func (o *output) logMessage(m discord.Message) error {
 			return fmt.Errorf("downloading attachment: %w", err)
 		}
 	}
-	_, err = fmt.Fprintf(o, "%d,%d,%d ", m.GuildID, m.ChannelID, m.ID)
-	if err != nil {
-		return err
+	content := m.Content
+	m.Content = ""
+	j, err := json.Marshal(m)
+	if _, err := stmtInsert.Exec(m.ID, m.Author.ID, m.ChannelID, m.GuildID, content, j); err != nil {
+		if e, ok := err.(sqlite3.Error); !ok || e.Code != sqlite3.ErrConstraint {
+			return err
+		}
 	}
-	return o.enc.Encode(m)
+	return nil
 }
 
 func deleteMsg(c *api.Client, m discord.Message) error {
