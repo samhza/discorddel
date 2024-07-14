@@ -1,4 +1,4 @@
-module discorddel
+module samhza.com/discorddel
 
 go 1.17
 
