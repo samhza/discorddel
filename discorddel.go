@@ -90,7 +90,12 @@ func main() {
 	var deleted uint = 0
 Outer:
 	for {
-		results, err := search(c.Client, guildID, searchdata)
+		var results api.SearchResponse
+		if guildID.IsValid() {
+			results, err = c.Client.Search(guildID, searchdata)
+		} else {
+			results, err = c.Client.SearchDirectMessages(searchdata)
+		}
 		if err != nil {
 			log.Fatalln("Error occured while searching messages:", err)
 		}
@@ -263,19 +268,4 @@ func chanURL(gid discord.GuildID, cid discord.ChannelID) string {
 		g = gid.String()
 	}
 	return fmt.Sprintf("https://discord.com/channels/%s/%s", g, cid)
-}
-
-func search(c *api.Client, guildID discord.GuildID, data api.SearchData) (api.SearchResponse, error) {
-	var resp api.SearchResponse
-	var endpoint string
-	if guildID != 0 {
-		endpoint = api.EndpointGuilds + guildID.String()
-	} else {
-		endpoint = api.EndpointChannels + data.ChannelID.String()
-	}
-	return resp, c.RequestJSON(
-		&resp, "GET",
-		endpoint+"/messages/search",
-		httputil.WithSchema(c, data),
-	)
 }
